@@ -1,0 +1,18 @@
+# Gradle / Android Studio
+.gradle/
+**/build/
+*.hprof
+
+# Local configuration (contains secrets / machine paths)
+local.properties
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Temporary helper folder used for pushing backend
+backend_deploy/
