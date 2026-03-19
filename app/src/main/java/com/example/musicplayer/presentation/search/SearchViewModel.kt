@@ -40,7 +40,9 @@ class SearchViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            behaviorRepository.trackSearch(query)
+            if (query != "local_files") {
+                behaviorRepository.trackSearch(query)
+            }
             _isLoading.value = true
             try {
                 _searchResults.value = musicRepository.globalSearch(query)
