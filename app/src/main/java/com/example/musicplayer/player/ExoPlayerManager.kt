@@ -19,7 +19,7 @@ class ExoPlayerManager @Inject constructor(
 ) {
     private val httpDataSourceFactory: HttpDataSource.Factory by lazy {
         DefaultHttpDataSource.Factory()
-            .setUserAgent("MusicPlayer/0.1 (Android)")
+            .setUserAgent("Skibidi/0.1 (Android)")
             .setAllowCrossProtocolRedirects(true)
     }
 
