@@ -4,11 +4,14 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -56,13 +59,14 @@ fun VinylPlayer(
                 .clip(CircleShape)
                 .rotate(if (isPlaying) angle else currentRotation)
         ) {
+            val placeholder = rememberVectorPainter(Icons.Default.MusicNote)
             AsyncImage(
                 model = imageUrl,
                 contentDescription = "Album Art",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
-                placeholder = painterResource(id = R.drawable.ic_music_note),
-                error = painterResource(id = R.drawable.ic_music_note)
+                placeholder = placeholder,
+                error = placeholder
             )
         }
         

@@ -8,6 +8,10 @@ import androidx.room.PrimaryKey
 data class PlaybackStateEntity(
     @PrimaryKey val id: Int = 0,
     @ColumnInfo(name = "current_track_id") val currentTrackId: String?,
+    @ColumnInfo(name = "title") val title: String? = null,
+    @ColumnInfo(name = "artist") val artist: String? = null,
+    @ColumnInfo(name = "image") val image: String? = null,
+    @ColumnInfo(name = "audio_url") val audioUrl: String? = null,
     @ColumnInfo(name = "position_ms") val positionMs: Long = 0L,
     @ColumnInfo(name = "is_playing") val isPlaying: Boolean = false
 )

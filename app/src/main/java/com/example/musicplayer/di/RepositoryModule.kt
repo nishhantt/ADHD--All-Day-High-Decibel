@@ -6,6 +6,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import com.example.musicplayer.network.SaavnService
+import com.example.musicplayer.network.YouTubeSearchService
 import javax.inject.Singleton
 
 @Module
@@ -14,7 +15,10 @@ object RepositoryModule {
 
     @Provides
     @Singleton
-    fun provideMusicRepository(saavnService: SaavnService): MusicRepository {
-        return MusicRepository(saavnService)
+    fun provideMusicRepository(
+        saavnService: SaavnService,
+        youtubeService: YouTubeSearchService
+    ): MusicRepository {
+        return MusicRepository(saavnService, youtubeService)
     }
 }

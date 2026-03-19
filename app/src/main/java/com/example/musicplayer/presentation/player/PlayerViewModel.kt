@@ -20,7 +20,9 @@ import javax.inject.Inject
 class PlayerViewModel @Inject constructor(
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     private val exoPlayerManager: ExoPlayerManager,
+    private val musicRepository: com.example.musicplayer.data.MusicRepository,
     private val behaviorRepository: com.example.musicplayer.data.BehaviorRepository,
+    private val playbackStateDao: com.example.musicplayer.data.local.dao.PlaybackStateDao,
     private val recommendationEngine: com.example.musicplayer.domain.recommendation.RecommendationEngine
 ) : ViewModel() {
 
@@ -44,6 +46,23 @@ class PlayerViewModel @Inject constructor(
     private val player: Player = exoPlayerManager.asPlayer()
 
     init {
+        // Load last played song
+        viewModelScope.launch {
+            playbackStateDao.observeState().collect { state ->
+                if (state != null && _uiState.value is PlayerUiState.Idle) {
+                    val song = Song(
+                        id = state.currentTrackId ?: "",
+                        title = state.title ?: "",
+                        artist = state.artist ?: "",
+                        image = state.image ?: "",
+                        audioUrl = state.audioUrl ?: ""
+                    )
+                    _uiState.value = PlayerUiState.Playing(song)
+                    _currentPosition.value = state.positionMs
+                }
+            }
+        }
+
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlayingNow: Boolean) {
                 _isPlaying.value = isPlayingNow
@@ -90,51 +109,98 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun playSong(song: Song, songs: List<Song> = emptyList()) {
-        if (song.audioUrl.isBlank()) {
-            Log.e("PlayerViewModel", "Audio URL is empty for song: ${song.title}")
-            _uiState.value = PlayerUiState.Error("Invalid audio URL")
-            return
-        }
-
-        try {
-            // If a list was provided (e.g. from search results), use it as the playlist
-            val listToUse = if (songs.isNotEmpty()) songs else listOf(song)
-            _playlist.value = listToUse
-            currentIndex = listToUse.indexOf(song).coerceAtLeast(0)
-
-            Log.d("Player", "Playing song: ${song.title} from playlist of size ${listToUse.size}")
+        viewModelScope.launch {
+            _uiState.value = PlayerUiState.Loading
             
-            // We use the ExoPlayer's internal playlist for Next/Prev support
-            val mediaItems = listToUse.map { s ->
-                MediaItem.Builder()
-                    .setUri(s.audioUrl)
-                    .setMediaMetadata(
-                        androidx.media3.common.MediaMetadata.Builder()
-                            .setTitle(s.title)
-                            .setArtist(s.artist)
-                            .setArtworkUri(android.net.Uri.parse(s.image))
-                            .build()
-                    )
+            try {
+                // Ensure we have a stream URL
+                val songWithUrl = if (song.audioUrl.isBlank()) {
+                    Log.d("Player", "Fetching stream URL for: ${song.title}")
+                    musicRepository.getSongDetails(song.id) ?: song
+                } else {
+                    song
+                }
+
+                if (songWithUrl.audioUrl.isBlank()) {
+                    _uiState.value = PlayerUiState.Error("Invalid audio URL")
+                    return@launch
+                }
+
+                // Update playlist: use provided list or single song
+                val newList = if (songs.isNotEmpty()) songs.toMutableList() else mutableListOf(songWithUrl)
+                
+                // Ensure the song with URL is in the list
+                val idx = newList.indexOfFirst { it.id == songWithUrl.id }
+                if (idx != -1) {
+                    newList[idx] = songWithUrl
+                } else {
+                    newList.add(0, songWithUrl)
+                }
+
+                _playlist.value = newList
+                currentIndex = newList.indexOfFirst { it.id == songWithUrl.id }
+
+                val mediaItems = newList.map { createMediaItem(it) }
+                
+                player.setMediaItems(mediaItems, currentIndex, 0L)
+                player.prepare()
+                player.play()
+                
+                _uiState.value = PlayerUiState.Playing(songWithUrl)
+                saveState(songWithUrl)
+            } catch (e: Exception) {
+                Log.e("PlayerViewModel", "Playback error", e)
+                _uiState.value = PlayerUiState.Error("Playback failed")
+            }
+        }
+    }
+
+    private fun createMediaItem(song: Song): MediaItem {
+        return MediaItem.Builder()
+            .setUri(song.audioUrl)
+            .setMediaId(song.id)
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder()
+                    .setTitle(song.title)
+                    .setArtist(song.artist)
+                    .setArtworkUri(android.net.Uri.parse(song.image))
                     .build()
-            }
-            
-            // Start the foreground service
-            val intent = android.content.Intent(context, com.example.musicplayer.player.MusicPlayerService::class.java)
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
+            )
+            .build()
+    }
 
-            player.setMediaItems(mediaItems, currentIndex, 0L)
-            player.prepare()
-            player.play()
-            
-            _uiState.value = PlayerUiState.Playing(song)
-        } catch (e: Exception) {
-            Log.e("PlayerViewModel", "Playback error", e)
-            _uiState.value = PlayerUiState.Error("Playback failed")
+    private fun saveState(song: Song) {
+        viewModelScope.launch {
+            playbackStateDao.upsert(
+                com.example.musicplayer.data.local.entities.PlaybackStateEntity(
+                    id = 0,
+                    currentTrackId = song.id,
+                    title = song.title,
+                    artist = song.artist,
+                    image = song.image,
+                    audioUrl = song.audioUrl,
+                    positionMs = 0L,
+                    isPlaying = true
+                )
+            )
         }
+    }
+
+    fun addToQueue(song: Song) {
+        val currentList = _playlist.value.toMutableList()
+        if (!currentList.any { it.id == song.id }) {
+            currentList.add(song)
+            _playlist.value = currentList
+            player.addMediaItem(createMediaItem(song))
+        }
+    }
+
+    fun playNext(song: Song) {
+        val currentList = _playlist.value.toMutableList()
+        val nextIndex = (currentIndex + 1).coerceAtMost(currentList.size)
+        currentList.add(nextIndex, song)
+        _playlist.value = currentList
+        player.addMediaItem(nextIndex, createMediaItem(song))
     }
 
     fun togglePlayPause() {

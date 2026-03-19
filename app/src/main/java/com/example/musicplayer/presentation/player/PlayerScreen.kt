@@ -1,10 +1,11 @@
-import androidx.compose.animation.*
+package com.example.musicplayer.presentation.player
+
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,36 +15,23 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
-import coil.imageLoader
-import coil.request.ImageRequest
-import coil.request.SuccessResult
-import com.example.musicplayer.R
-import com.example.musicplayer.presentation.player.components.VinylPlayer
 import com.example.musicplayer.presentation.player.components.QueueBottomSheet
-import com.example.musicplayer.presentation.ui.theme.rememberDynamicThemeState
+import com.example.musicplayer.ui.components.*
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterialApi::class)
 @Composable
 fun PlayerScreen(
-    onBack: () -> Unit = {},
+    onOpenSidebar: () -> Unit = {},
     onSearch: () -> Unit = {},
     viewModel: PlayerViewModel = hiltViewModel()
 ) {
@@ -53,36 +41,16 @@ fun PlayerScreen(
     val playlist by viewModel.playlist.collectAsState()
     val duration = viewModel.getDuration()
     
-    val context = LocalContext.current
-    val dynamicThemeState = rememberDynamicThemeState()
-    val sheetState = rememberModalBottomSheetState(initialValue = ModalBottomSheetValue.Hidden)
+    val currentSongResource = (state as? PlayerUiState.Playing)?.song
     val scope = rememberCoroutineScope()
-
-    // Extract colors when song changes
-    val currentSong = (state as? PlayerUiState.Playing)?.song
-    LaunchedEffect(currentSong) {
-        currentSong?.image?.let { url ->
-            val request = ImageRequest.Builder(context)
-                .data(url)
-                .allowHardware(false)
-                .build()
-            val result = context.imageLoader.execute(request)
-            if (result is SuccessResult) {
-                val bitmap = (result.drawable as android.graphics.drawable.BitmapDrawable).bitmap
-                dynamicThemeState.updateFromBitmap(bitmap)
-            }
-        }
-    }
-
-    val animatedBgStart by animateColorAsState(targetValue = dynamicThemeState.primaryColor, animationSpec = tween(1000), label = "bg_start")
-    val animatedBgEnd by animateColorAsState(targetValue = dynamicThemeState.secondaryColor, animationSpec = tween(1000), label = "bg_end")
+    val sheetState = rememberModalBottomSheetState(initialValue = ModalBottomSheetValue.Hidden)
 
     ModalBottomSheetLayout(
         sheetState = sheetState,
         sheetContent = {
             QueueBottomSheet(
                 songs = playlist,
-                currentSongId = currentSong?.id ?: "",
+                currentSongId = currentSongResource?.id ?: "",
                 onSongClick = { song ->
                     viewModel.playSong(song, playlist)
                     scope.launch { sheetState.hide() }
@@ -95,81 +63,97 @@ fun PlayerScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(animatedBgStart, animatedBgEnd)
-                    )
-                )
+                .background(NeumorphicBackground)
         ) {
-            // Main Content Column
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 24.dp, vertical = 32.dp),
+                    .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                // Top Nav
+                // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.KeyboardArrowDown, "Back", tint = Color.White.copy(alpha = 0.8f))
+                    NeumorphicButton(onClick = onOpenSidebar, size = 48.dp) {
+                        Icon(Icons.Default.Menu, "Menu", tint = Color.Gray)
                     }
                     
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = currentSong?.title ?: "Skibidi",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = currentSong?.artist ?: "Music Player",
-                            color = Color.White.copy(alpha = 0.6f),
-                            fontSize = 12.sp
-                        )
-                    }
+                    Text(
+                        text = "Now Playing",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
 
-                    IconButton(onClick = onSearch) {
-                        Icon(Icons.Filled.Search, "Search", tint = Color.White.copy(alpha = 0.8f))
+                    NeumorphicButton(onClick = onSearch, size = 48.dp) {
+                        Icon(Icons.Default.Search, "Search", tint = Color.Gray)
                     }
                 }
 
-                // Center focus: Vinyl
-                VinylPlayer(
-                    imageUrl = currentSong?.image ?: "",
-                    isPlaying = isPlaying,
+                // Full Circular Artwork
+                Box(
                     modifier = Modifier
-                        .padding(vertical = 32.dp)
                         .weight(1f)
-                )
-
-                // Info and Controls Section
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.Start
+                        .aspectRatio(1f)
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    // Song Info
-                    Text(
-                        text = currentSong?.title ?: "Select a song",
-                        color = Color.White,
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1
+                    CircularPlayer(
+                        imageUrl = currentSongResource?.image ?: "",
+                        isPlaying = isPlaying,
+                        modifier = Modifier.fillMaxSize()
                     )
-                    Text(
-                        text = currentSong?.artist ?: "Search to begin",
-                        color = Color.White.copy(alpha = 0.7f),
-                        fontSize = 20.sp,
-                        maxLines = 1
-                    )
+                }
 
-                    Spacer(modifier = Modifier.height(32.dp))
+                // Song Info Card
+                NeumorphicCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp)
+                        .height(80.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            AsyncImage(
+                                model = currentSongResource?.image,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column {
+                                Text(
+                                    text = currentSongResource?.title ?: "Search a song and play",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    text = currentSongResource?.artist ?: "",
+                                    color = Color.Gray,
+                                    fontSize = 14.sp,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                        // "Follow" button removed per user request
+                    }
+                }
 
-                    // Progress Slider
+                // Progress
+                Column(modifier = Modifier.fillMaxWidth()) {
                     val sliderValue = if (duration > 0) currentPosition.toFloat() / duration.toFloat() else 0f
                     Slider(
                         value = sliderValue,
@@ -179,67 +163,102 @@ fun PlayerScreen(
                         colors = SliderDefaults.colors(
                             thumbColor = Color.White,
                             activeTrackColor = Color.White,
-                            inactiveTrackColor = Color.White.copy(alpha = 0.2f)
-                        ),
-                        modifier = Modifier.fillMaxWidth()
+                            inactiveTrackColor = Color.Gray.copy(alpha = 0.3f)
+                        )
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(text = formatTime(currentPosition), color = Color.Gray, fontSize = 12.sp)
+                        Text(text = formatTime(duration), color = Color.Gray, fontSize = 12.sp)
+                    }
+                }
+
+                // 3D Control Hub
+                Box(modifier = Modifier.fillMaxWidth().height(280.dp)) {
+                    // Secondary Buttons (Corners)
+                    NeumorphicButton(
+                        onClick = { /* Menu */ },
+                        size = 56.dp, 
+                        modifier = Modifier.align(Alignment.TopStart)
                     ) {
-                        Text(text = formatTime(currentPosition), color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
-                        Text(text = formatTime(duration), color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+                        Icon(Icons.Default.MoreHoriz, null, tint = Color.Gray)
+                    }
+                    
+                    NeumorphicButton(
+                        onClick = { scope.launch { sheetState.show() } },
+                        size = 56.dp,
+                        modifier = Modifier.align(Alignment.TopEnd)
+                    ) {
+                        Icon(Icons.Default.PlaylistPlay, null, tint = Color.Gray)
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    // Player Controls
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
+                    NeumorphicButton(
+                        onClick = { /* Repeat */ },
+                        size = 56.dp,
+                        modifier = Modifier.align(Alignment.BottomStart)
                     ) {
-                        IconButton(onClick = { viewModel.previous() }) {
-                            Icon(Icons.Filled.SkipPrevious, "Prev", tint = Color.White, modifier = Modifier.size(42.dp))
-                        }
+                        Icon(Icons.Default.Repeat, null, tint = Color.Gray)
+                    }
 
-                        // Large Play/Pause
-                        Surface(
-                            shape = CircleShape,
-                            color = Color.White.copy(alpha = 0.1f),
-                            modifier = Modifier
-                                .size(72.dp)
-                                .clickable { viewModel.togglePlayPause() }
+                    NeumorphicButton(
+                        onClick = { /* Music */ },
+                        size = 56.dp,
+                        modifier = Modifier.align(Alignment.BottomEnd)
+                    ) {
+                        Icon(Icons.Default.MusicNote, null, tint = Color.Gray)
+                    }
+
+                    // Central Control Circle
+                    Box(
+                        modifier = Modifier
+                            .size(200.dp)
+                            .align(Alignment.Center)
+                            .neumorphicShadow(CircleShape, elevation = 6.dp)
+                            .background(NeumorphicBackground, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // Control elements in circle
+                        // Top: Favorite/Heart
+                        Icon(
+                            Icons.Default.FavoriteBorder, 
+                            null, 
+                            tint = Color.Gray,
+                            modifier = Modifier.align(Alignment.TopCenter).padding(top = 16.dp).size(24.dp).clickable { /* Liked */ }
+                        )
+                        
+                        // Bottom: Volume/Speaker
+                        Icon(
+                            Icons.Default.VolumeUp, 
+                            null, 
+                            tint = Color.Gray,
+                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp).size(24.dp)
+                        )
+
+                        // Middle Row: Prev - Play/Pause - Next
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                contentDescription = "Play/Pause",
-                                tint = Color.White,
+                            Icon(Icons.Default.SkipPrevious, null, tint = Color.Gray, modifier = Modifier.size(32.dp).clickable { viewModel.previous() })
+                            
+                            // Center Play/Pause in a smaller circle
+                            Box(
                                 modifier = Modifier
-                                    .padding(16.dp)
-                                    .fillMaxSize()
-                            )
-                        }
+                                    .size(64.dp)
+                                    .neumorphicShadow(CircleShape, elevation = 2.dp)
+                                    .background(NeumorphicBackground, CircleShape)
+                                    .clickable { viewModel.togglePlayPause() },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(40.dp)
+                                )
+                            }
 
-                        IconButton(onClick = { viewModel.next() }) {
-                            Icon(Icons.Filled.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(42.dp))
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(32.dp))
-
-                    // Extra Controls: Repeat & Queue Toggle
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = { /* Repeat One logic */ }) {
-                            Icon(Icons.Filled.RepeatOne, "Repeat One", tint = Color.White.copy(alpha = 0.6f))
-                        }
-
-                        IconButton(onClick = { scope.launch { sheetState.show() } }) {
-                            Icon(Icons.Filled.QueueMusic, "View Queue", tint = Color.White.copy(alpha = 0.6f))
+                            Icon(Icons.Default.SkipNext, null, tint = Color.Gray, modifier = Modifier.size(32.dp).clickable { viewModel.next() })
                         }
                     }
                 }
@@ -248,11 +267,30 @@ fun PlayerScreen(
     }
 }
 
-private fun formatTime(ms: Long): String {
-    val totalSeconds = ms / 1000
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return "%d:%02d".format(minutes, seconds)
+@Composable
+fun CircularPlayer(
+    imageUrl: String,
+    isPlaying: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val rotation by animateFloatAsState(
+        targetValue = if (isPlaying) 360f else 0f,
+        animationSpec = infiniteRepeatable(tween(10000, easing = LinearEasing)), label = "rotation_animation"
+    )
+
+    Box(
+        modifier = modifier
+            .clip(CircleShape)
+            .graphicsLayer { rotationZ = if (isPlaying) rotation else 0f }
+            .background(Color.Black)
+    ) {
+        AsyncImage(
+            model = imageUrl,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+    }
 }
 
 private fun formatTime(ms: Long): String {

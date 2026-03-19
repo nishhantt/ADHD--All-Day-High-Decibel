@@ -32,4 +32,5 @@ class MusicRepository @Inject constructor(
 
     suspend fun getAlbumSongs(albumId: String) = saavnService.getAlbumDetails(albumId)
     suspend fun getArtistSongs(artistId: String) = saavnService.getArtistSongs(artistId)
+    suspend fun getSongDetails(songId: String) = saavnService.getSongDetails(songId)
 }

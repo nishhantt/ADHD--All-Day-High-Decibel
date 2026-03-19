@@ -20,8 +20,8 @@ class DynamicThemeState(
         val palette = Palette.from(bitmap).generate()
         
         // Extract dominant colors, fallback to dark Apple Music grey
-        val dominantColor = palette.getDominantColor(0xFF1C1C1E)
-        val mutedColor = palette.getMutedColor(0xFF2C2C2E)
+        val dominantColor = palette.getDominantColor(0xFF1C1C1E.toInt())
+        val mutedColor = palette.getMutedColor(0xFF2C2C2E.toInt())
         
         primaryColor = Color(dominantColor)
         secondaryColor = Color(mutedColor)

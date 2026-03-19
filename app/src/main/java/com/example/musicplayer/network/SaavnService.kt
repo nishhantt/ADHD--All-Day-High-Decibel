@@ -41,6 +41,23 @@ class SaavnService(private val client: OkHttpClient) {
         }
     }
 
+    suspend fun getSongDetails(id: String): Song? = withContext(Dispatchers.IO) {
+        val url = "https://saavn.sumit.co/api/songs?id=$id"
+        try {
+            val request = Request.Builder().url(url).build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: return@withContext null
+            val json = JSONObject(body)
+            val results = json.optJSONArray("data") ?: return@withContext null
+            if (results.length() > 0) {
+                parseSongItem(results.getJSONObject(0))
+            } else null
+        } catch (e: Exception) {
+            Log.e("SaavnAPI", "Failed to fetch song details for $id", e)
+            null
+        }
+    }
+
     private fun fetchAndParse(url: String, isDirect: Boolean): List<Song> {
         val requestBuilder = Request.Builder().url(url)
         

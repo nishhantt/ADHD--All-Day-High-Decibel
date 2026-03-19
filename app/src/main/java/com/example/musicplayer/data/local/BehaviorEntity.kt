@@ -6,8 +6,9 @@ import kotlinx.coroutines.flow.Flow
 @Entity(tableName = "user_behavior")
 data class BehaviorEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
-    val songId: String,
+    val songId: String = "",
     val action: String, // "PLAY", "SKIP", "SEARCH"
+    val query: String = "",
     val timestamp: Long = System.currentTimeMillis(),
     val artistName: String = "",
     val albumName: String = ""

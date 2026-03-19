@@ -23,4 +23,7 @@ object DatabaseModule {
 
     @Provides
     fun provideBehaviorDao(db: AppDatabase) = db.behaviorDao()
+
+    @Provides
+    fun providePlaybackStateDao(db: AppDatabase) = db.playbackStateDao()
 }
