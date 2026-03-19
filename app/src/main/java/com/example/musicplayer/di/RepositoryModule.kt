@@ -2,11 +2,12 @@ package com.example.musicplayer.di
 
 import com.example.musicplayer.data.LocalMusicRepository
 import com.example.musicplayer.data.MusicRepository
+import com.example.musicplayer.network.YouTubeSearchService
+import com.example.musicplayer.network.YouTubeExtractor
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
-import com.example.musicplayer.network.SaavnService
 import javax.inject.Singleton
 
 @Module
@@ -16,11 +17,10 @@ object RepositoryModule {
     @Provides
     @Singleton
     fun provideMusicRepository(
-        saavnService: SaavnService,
-        youtubeService: com.example.musicplayer.network.YouTubeSearchService,
-        youtubeExtractor: com.example.musicplayer.network.YouTubeExtractor,
+        youtubeService: YouTubeSearchService,
+        youtubeExtractor: YouTubeExtractor,
         localMusicRepository: LocalMusicRepository
     ): MusicRepository {
-        return MusicRepository(saavnService, youtubeService, youtubeExtractor, localMusicRepository)
+        return MusicRepository(youtubeService, youtubeExtractor, localMusicRepository)
     }
 }

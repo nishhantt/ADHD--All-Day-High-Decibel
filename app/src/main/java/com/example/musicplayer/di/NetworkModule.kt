@@ -1,6 +1,7 @@
 package com.example.musicplayer.di
 
-import com.example.musicplayer.network.SaavnService
+import com.example.musicplayer.network.YouTubeSearchService
+import com.example.musicplayer.network.YouTubeExtractor
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -32,26 +33,19 @@ object NetworkModule {
             }
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
-            // Forcing HTTP/1.1 if HTTP/2 causes PROTOCOL_ERROR with this specific API
             .protocols(listOf(Protocol.HTTP_1_1, Protocol.HTTP_2))
             .build()
     }
 
     @Provides
     @Singleton
-    fun provideSaavnService(client: OkHttpClient): SaavnService {
-        return SaavnService(client)
+    fun provideYouTubeExtractor(client: OkHttpClient): YouTubeExtractor {
+        return YouTubeExtractor(client)
     }
 
     @Provides
     @Singleton
-    fun provideYouTubeExtractor(client: OkHttpClient): com.example.musicplayer.network.YouTubeExtractor {
-        return com.example.musicplayer.network.YouTubeExtractor(client)
-    }
-
-    @Provides
-    @Singleton
-    fun provideYouTubeSearchService(client: OkHttpClient, extractor: com.example.musicplayer.network.YouTubeExtractor): com.example.musicplayer.network.YouTubeSearchService {
-        return com.example.musicplayer.network.YouTubeSearchService(client, extractor)
+    fun provideYouTubeSearchService(client: OkHttpClient, extractor: YouTubeExtractor): YouTubeSearchService {
+        return YouTubeSearchService(client, extractor)
     }
 }
