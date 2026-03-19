@@ -7,14 +7,17 @@ import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
 @Singleton
 class YouTubeExtractor @Inject constructor(
     private val client: OkHttpClient
 ) {
     private val TAG = "YouTubeExtractor"
 
-    suspend fun extractStreamUrl(videoId: String): String {
-        return try {
+    suspend fun extractStreamUrl(videoId: String): String = withContext(Dispatchers.IO) {
+        try {
             val url = "https://www.youtube.com/watch?v=$videoId"
             val request = Request.Builder()
                 .url(url)
@@ -22,12 +25,12 @@ class YouTubeExtractor @Inject constructor(
                 .build()
 
             val response = client.newCall(request).execute()
-            val html = response.body?.string() ?: return ""
+            val html = response.body?.string() ?: return@withContext ""
 
             // Find ytInitialPlayerResponse in the HTML
             val regex = Regex("var ytInitialPlayerResponse = (\\{.*?\\});")
             val match = regex.find(html)
-            val jsonStr = match?.groupValues?.get(1) ?: return ""
+            val jsonStr = match?.groupValues?.get(1) ?: return@withContext ""
 
             val playerResponse = JSONObject(jsonStr)
             val streamingData = playerResponse.getJSONObject("streamingData")
@@ -45,14 +48,11 @@ class YouTubeExtractor @Inject constructor(
                     if (bitrate > bestBitrate) {
                         bestBitrate = bitrate
                         bestUrl = format.optString("url")
-                        // If URL is missing, it might be signature-protected (n-parameter)
-                        // In a simple extractor, we prefer direct URLs if available
                     }
                 }
             }
 
             if (bestUrl.isBlank()) {
-                // Fallback to a reliable fast proxy if direct extraction fails due to signatures
                 bestUrl = "https://youtube-to-mp3-proxy.terasp.net/api/stream?id=$videoId"
             }
 
