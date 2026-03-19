@@ -44,7 +44,7 @@ class SoundCloudService @Inject constructor(
 
     suspend fun resolveStreamUrl(trackId: String): String {
         return try {
-            "https://soundcloud-stream-proxy.terasp.net/stream?id=$trackId&client_id=LBCcHmS96G6h0ST69X2WpC9fK5V6GvB5"
+            "https://soundcloud-stream-proxy.terasp.net/stream?id=$trackId&client_id=$CLIENT_ID"
         } catch (e: Exception) {
             ""
         }
