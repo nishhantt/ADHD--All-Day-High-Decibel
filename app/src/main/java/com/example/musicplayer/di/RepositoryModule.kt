@@ -17,8 +17,10 @@ object RepositoryModule {
     @Singleton
     fun provideMusicRepository(
         saavnService: SaavnService,
+        youtubeService: com.example.musicplayer.network.YouTubeSearchService,
+        youtubeExtractor: com.example.musicplayer.network.YouTubeExtractor,
         localMusicRepository: LocalMusicRepository
     ): MusicRepository {
-        return MusicRepository(saavnService, localMusicRepository)
+        return MusicRepository(saavnService, youtubeService, youtubeExtractor, localMusicRepository)
     }
 }
