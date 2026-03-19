@@ -108,18 +108,23 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    private var playJob: kotlinx.coroutines.Job? = null
+
     fun playSong(song: Song, songs: List<Song> = emptyList()) {
-        viewModelScope.launch {
+        playJob?.cancel()
+        playJob = viewModelScope.launch {
             _uiState.value = PlayerUiState.Loading
             
             try {
-                // Ensure we have a stream URL
+                // Ensure we have a stream URL (this might take a second, so we allow cancellation)
                 val songWithUrl = if (song.audioUrl.isBlank()) {
                     Log.d("Player", "Fetching stream URL for: ${song.title}")
                     musicRepository.getSongDetails(song.id) ?: song
                 } else {
                     song
                 }
+
+                if (!kotlinx.coroutines.isActive) return@launch
 
                 if (songWithUrl.audioUrl.isBlank()) {
                     _uiState.value = PlayerUiState.Error("Invalid audio URL")

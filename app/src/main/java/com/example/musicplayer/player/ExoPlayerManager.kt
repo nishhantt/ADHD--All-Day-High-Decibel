@@ -25,8 +25,10 @@ class ExoPlayerManager @Inject constructor(
 
     private val httpDataSourceFactory: HttpDataSource.Factory by lazy {
         DefaultHttpDataSource.Factory()
-            .setUserAgent("Skibidi/1.0 (Android)")
+            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
             .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(15000)
+            .setReadTimeoutMs(15000)
     }
 
     private val cacheDataSourceFactory: androidx.media3.datasource.DataSource.Factory by lazy {
