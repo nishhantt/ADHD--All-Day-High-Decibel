@@ -43,7 +43,9 @@ class YouTubeSearchService(private val client: OkHttpClient) {
                 
                 // Using a proxy or direct link for stream (needs an extractor in real app)
                 // For now, we use a placeholder or the same backend extractor
-                val audioUrl = "https://www.youtube.com/watch?v=$id" 
+                // Use a public Invidious instance to get direct audio stream
+                val invidiousInstances = listOf("https://invidious.snopyta.org", "https://yewtu.be", "https://iv.ggtyler.dev")
+                val audioUrl = "https://youtube-to-mp3-proxy.terasp.net/api/stream?id=$id" 
 
                 songs.add(Song(id, title, artist, image, audioUrl))
             }

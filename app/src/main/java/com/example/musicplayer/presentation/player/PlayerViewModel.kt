@@ -126,10 +126,10 @@ class PlayerViewModel @Inject constructor(
                     return@launch
                 }
 
-                // Update playlist: use provided list or single song
+                // If a list was provided (e.g. from search results), use it as the playlist
                 val newList = if (songs.isNotEmpty()) songs.toMutableList() else mutableListOf(songWithUrl)
                 
-                // Ensure the song with URL is in the list
+                // Ensure the explicit song with the URL is updated in the list
                 val idx = newList.indexOfFirst { it.id == songWithUrl.id }
                 if (idx != -1) {
                     newList[idx] = songWithUrl
@@ -138,9 +138,15 @@ class PlayerViewModel @Inject constructor(
                 }
 
                 _playlist.value = newList
-                currentIndex = newList.indexOfFirst { it.id == songWithUrl.id }
+                currentIndex = newList.indexOfFirst { it.id == songWithUrl.id }.coerceAtLeast(0)
 
+                Log.d("PlayerViewModel", "Final Playlist Size: ${newList.size}, Index: $currentIndex")
+                
                 val mediaItems = newList.map { createMediaItem(it) }
+                
+                // Clear state before new session
+                player.stop()
+                player.clearMediaItems()
                 
                 player.setMediaItems(mediaItems, currentIndex, 0L)
                 player.prepare()

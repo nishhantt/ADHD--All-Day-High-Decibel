@@ -21,9 +21,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 // Colors for the 3D effect
-val NeumorphicBackground = Color(0xFF1A1A1A)
-val NeumorphicLightShadow = Color(0xFF2E2E2E)
-val NeumorphicDarkShadow = Color(0xFF0F0F0F)
+val NeumorphicBackground = Color(0xFF121212) // Darker background
+val NeumorphicButtonBackground = Color(0xFF1C1C1C) // Lighter button surface
+val NeumorphicDarkShadow = Color(0xFF080808) // Deep shadow
+val NeumorphicGlow = Color(0xFF252525) // Subtle glow for all-around effect
 
 @Composable
 fun NeumorphicButton(
@@ -35,9 +36,9 @@ fun NeumorphicButton(
     Box(
         modifier = modifier
             .size(size)
-            .neumorphicShadow(shape = CircleShape)
+            .neumorphicShadow(shape = CircleShape, elevation = 6.dp)
             .clip(CircleShape)
-            .background(NeumorphicBackground)
+            .background(NeumorphicButtonBackground)
             .clickable { onClick() },
         contentAlignment = Alignment.Center,
         content = content
@@ -52,9 +53,9 @@ fun NeumorphicCard(
 ) {
     Box(
         modifier = modifier
-            .neumorphicShadow(shape = RoundedCornerShape(cornerRadius))
+            .neumorphicShadow(shape = RoundedCornerShape(cornerRadius), elevation = 4.dp)
             .clip(RoundedCornerShape(cornerRadius))
-            .background(NeumorphicBackground),
+            .background(NeumorphicButtonBackground),
         content = content
     )
 }
@@ -64,14 +65,24 @@ fun Modifier.neumorphicShadow(
     elevation: Dp = 4.dp
 ): Modifier = this.drawBehind {
     val shadowColorDark = NeumorphicDarkShadow.toArgb()
+    val glowColor = NeumorphicGlow.toArgb()
     
     drawIntoCanvas { canvas ->
         val paint = Paint()
         val frameworkPaint = paint.asFrameworkPaint()
-        
         val outline = shape.createOutline(size, layoutDirection, this)
         
-        // Dark Shadow (Bottom Right)
+        // 1. Centered Glow (All-around)
+        frameworkPaint.color = glowColor
+        frameworkPaint.setShadowLayer(
+            elevation.toPx() * 1.5f,
+            0f,
+            0f,
+            glowColor
+        )
+        canvas.drawOutline(outline, paint)
+
+        // 2. Primary Dark Shadow (Bottom Right)
         frameworkPaint.color = shadowColorDark
         frameworkPaint.setShadowLayer(
             elevation.toPx(),

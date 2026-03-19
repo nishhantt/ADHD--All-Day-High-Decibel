@@ -43,5 +43,21 @@ class MusicRepository @Inject constructor(
 
     suspend fun getAlbumSongs(albumId: String) = saavnService.getAlbumDetails(albumId)
     suspend fun getArtistSongs(artistId: String) = saavnService.getArtistSongs(artistId)
-    suspend fun getSongDetails(songId: String) = saavnService.getSongDetails(songId)
+    suspend fun getSongDetails(songId: String): Song? {
+        return when {
+            songId.startsWith("local_") -> null // Local songs already have path in audioUrl
+            songId.startsWith("sc_") -> {
+                val id = songId.substringAfter("sc_")
+                val streamUrl = soundCloudService.resolveStreamUrl(id)
+                // We'd ideally need the metadata too, but if it's already in the Song object from search, we're good.
+                // For simplicity, we return a Song with just the streamUrl.
+                Song(id = songId, title = "Resolving...", artist = "", image = "", audioUrl = streamUrl)
+            }
+            songId.startsWith("yt_") -> {
+                // YT URLs are already set to the proxy in YouTubeSearchService
+                null
+            }
+            else -> saavnService.getSongDetails(songId)
+        }
+    }
 }
