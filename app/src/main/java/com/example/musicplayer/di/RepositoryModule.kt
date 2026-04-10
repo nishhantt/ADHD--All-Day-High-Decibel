@@ -2,8 +2,7 @@ package com.example.musicplayer.di
 
 import com.example.musicplayer.data.LocalMusicRepository
 import com.example.musicplayer.data.MusicRepository
-import com.example.musicplayer.network.YouTubeSearchService
-import com.example.musicplayer.network.YouTubeExtractor
+import com.example.musicplayer.network.PhoneBackendService
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -17,10 +16,9 @@ object RepositoryModule {
     @Provides
     @Singleton
     fun provideMusicRepository(
-        youtubeService: YouTubeSearchService,
-        youtubeExtractor: YouTubeExtractor,
+        phoneBackendService: PhoneBackendService,
         localMusicRepository: LocalMusicRepository
     ): MusicRepository {
-        return MusicRepository(youtubeService, youtubeExtractor, localMusicRepository)
+        return MusicRepository(phoneBackendService, localMusicRepository)
     }
 }

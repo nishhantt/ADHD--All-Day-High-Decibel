@@ -1,9 +1,6 @@
 package com.example.musicplayer.presentation.player
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -16,280 +13,305 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
+import com.example.musicplayer.player.ExoPlayerManager
 import com.example.musicplayer.presentation.player.components.QueueBottomSheet
-import com.example.musicplayer.ui.components.*
+import com.example.musicplayer.ui.components.DynamicBackground
+import com.example.musicplayer.ui.components.NeumorphicButton
+import com.example.musicplayer.ui.components.neumorphicShadow
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterialApi::class)
 @Composable
 fun PlayerScreen(
-    onOpenSidebar: () -> Unit = {},
-    onSearch: () -> Unit = {},
-    viewModel: PlayerViewModel = hiltViewModel()
+    viewModel: PlayerViewModel,
+    onOpenSidebar: () -> Unit,
+    onSearch: () -> Unit
 ) {
-    val state by viewModel.uiState.collectAsState(initial = PlayerUiState.Idle)
+    val currentSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
-    val currentPosition by viewModel.currentPosition.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val playbackPosition by viewModel.playbackPosition.collectAsState()
+    val duration by viewModel.duration.collectAsState()
+    val repeatMode by viewModel.repeatMode.collectAsState()
     val playlist by viewModel.playlist.collectAsState()
-    val duration = viewModel.getDuration()
     
-    val currentSongResource = (state as? PlayerUiState.Playing)?.song
     val scope = rememberCoroutineScope()
-    val sheetState = rememberModalBottomSheetState(initialValue = ModalBottomSheetValue.Hidden)
+    val scaffoldState = rememberBottomSheetScaffoldState(
+        bottomSheetState = rememberBottomSheetState(BottomSheetValue.Collapsed)
+    )
 
-    ModalBottomSheetLayout(
-        sheetState = sheetState,
+    BottomSheetScaffold(
+        scaffoldState = scaffoldState,
         sheetContent = {
             QueueBottomSheet(
                 songs = playlist,
-                currentSongId = currentSongResource?.id ?: "",
-                onSongClick = { song ->
-                    viewModel.playSong(song, playlist)
-                    scope.launch { sheetState.hide() }
-                }
+                currentSongId = currentSong?.id ?: "",
+                onSongClick = { viewModel.playSong(it, playlist) }
             )
         },
-        sheetShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        sheetBackgroundColor = Color.Transparent
+        sheetPeekHeight = 0.dp,
+        sheetBackgroundColor = Color(0xFF1A1A1A),
+        sheetShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(NeumorphicBackground)
+        DynamicBackground(
+            imageUrl = currentSong?.image,
+            modifier = Modifier.fillMaxSize()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.SpaceBetween
+                    .padding(horizontal = 24.dp)
             ) {
-                // Header
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 48.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    NeumorphicButton(onClick = onOpenSidebar, size = 48.dp) {
-                        Icon(Icons.Default.Menu, "Menu", tint = Color.Gray)
+                    IconButton(onClick = onOpenSidebar) {
+                        Icon(Icons.Default.Menu, null, tint = Color.White)
                     }
                     
                     Text(
-                        text = "Now Playing",
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
+                        text = "NOW PLAYING",
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 2.sp
                     )
-
-                    NeumorphicButton(onClick = onSearch, size = 48.dp) {
-                        Icon(Icons.Default.Search, "Search", tint = Color.Gray)
+                    
+                    IconButton(onClick = onSearch) {
+                        Icon(Icons.Default.Search, null, tint = Color.White)
                     }
                 }
 
-                // Full Circular Artwork
+                Spacer(modifier = Modifier.weight(0.5f))
+
                 Box(
                     modifier = Modifier
-                        .weight(1f)
+                        .fillMaxWidth()
                         .aspectRatio(1f)
-                        .padding(16.dp),
+                        .padding(24.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularPlayer(
-                        imageUrl = currentSongResource?.image ?: "",
-                        isPlaying = isPlaying,
-                        modifier = Modifier.fillMaxSize()
+                    val rotation = rememberInfiniteTransition().animateFloat(
+                        initialValue = 0f,
+                        targetValue = 360f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(15000, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart
+                        )
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape)
+                            .background(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = 0.1f),
+                                        Color.Black.copy(alpha = 0.3f)
+                                    )
+                                )
+                            )
+                            .neumorphicShadow(CircleShape, elevation = 16.dp)
+                    )
+
+                    AsyncImage(
+                        model = currentSong?.image,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxSize(0.85f)
+                            .graphicsLayer {
+                                if (isPlaying) {
+                                    rotationZ = rotation.value
+                                }
+                            }
+                            .clip(CircleShape),
+                        contentScale = ContentScale.Crop
                     )
                 }
 
-                // Song Info Card
-                NeumorphicCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 16.dp)
-                        .height(80.dp)
+                Spacer(modifier = Modifier.weight(0.5f))
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            AsyncImage(
-                                model = currentSongResource?.image,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(56.dp)
-                                    .clip(RoundedCornerShape(8.dp)),
-                                contentScale = ContentScale.Crop
-                            )
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column {
-                                Text(
-                                    text = currentSongResource?.title ?: "Search a song and play",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1
-                                )
-                                Text(
-                                    text = currentSongResource?.artist ?: "",
-                                    color = Color.Gray,
-                                    fontSize = 14.sp,
-                                    maxLines = 1
-                                )
-                            }
-                        }
-                        // "Follow" button removed per user request
-                    }
+                    Text(
+                        text = currentSong?.title ?: "No Song Selected",
+                        color = Color.White,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = currentSong?.artist ?: "Unknown Artist",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 16.sp
+                    )
                 }
 
-                // Progress
+                Spacer(modifier = Modifier.height(32.dp))
+
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    val sliderValue = if (duration > 0) currentPosition.toFloat() / duration.toFloat() else 0f
                     Slider(
-                        value = sliderValue,
-                        onValueChange = { percent ->
-                            if (duration > 0) viewModel.seekTo((percent * duration).toLong())
-                        },
+                        value = playbackPosition.toFloat(),
+                        onValueChange = { viewModel.seekTo(it.toLong()) },
+                        valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
                         colors = SliderDefaults.colors(
                             thumbColor = Color.White,
                             activeTrackColor = Color.White,
-                            inactiveTrackColor = Color.Gray.copy(alpha = 0.3f)
+                            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
                         )
                     )
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(text = formatTime(currentPosition), color = Color.Gray, fontSize = 12.sp)
-                        Text(text = formatTime(duration), color = Color.Gray, fontSize = 12.sp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(formatTime(playbackPosition), color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+                        Text(formatTime(duration), color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
                     }
                 }
 
-                // 3D Control Hub
-                Box(modifier = Modifier.fillMaxWidth().height(280.dp)) {
-                    // Secondary Buttons (Corners)
+                Spacer(modifier = Modifier.height(32.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(240.dp)
+                ) {
                     NeumorphicButton(
-                        onClick = { /* Menu */ },
-                        size = 56.dp, 
+                        onClick = { scope.launch { scaffoldState.bottomSheetState.expand() } },
+                        size = 56.dp,
                         modifier = Modifier.align(Alignment.TopStart)
                     ) {
-                        Icon(Icons.Default.MoreHoriz, null, tint = Color.Gray)
+                        Icon(Icons.Default.QueueMusic, null, tint = Color.White.copy(alpha = 0.7f))
                     }
                     
                     NeumorphicButton(
-                        onClick = { scope.launch { sheetState.show() } },
-                        size = 56.dp,
+                        onClick = { viewModel.seekBackward() },
+                        size = 40.dp,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(end = 100.dp)
+                    ) {
+                        Icon(Icons.Default.FastRewind, null, tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(20.dp))
+                    }
+
+                    NeumorphicButton(
+                        onClick = { viewModel.seekForward() },
+                        size = 40.dp,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(end = 48.dp)
+                    ) {
+                        Icon(Icons.Default.FastForward, null, tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(20.dp))
+                    }
+
+                    NeumorphicButton(
+                        onClick = { viewModel.toggleRepeatMode() },
+                        size = 40.dp,
                         modifier = Modifier.align(Alignment.TopEnd)
                     ) {
-                        Icon(Icons.Default.PlaylistPlay, null, tint = Color.Gray)
+                        Icon(
+                            when (repeatMode) {
+                                ExoPlayerManager.REPEAT_MODE_OFF -> Icons.Default.Repeat
+                                ExoPlayerManager.REPEAT_MODE_ONE -> Icons.Default.RepeatOne
+                                else -> Icons.Default.Repeat
+                            }, 
+                            null, 
+                            tint = if (repeatMode == ExoPlayerManager.REPEAT_MODE_ONE) Color.White else Color.White.copy(alpha = 0.7f)
+                        )
                     }
 
-                    NeumorphicButton(
-                        onClick = { /* Repeat */ },
-                        size = 56.dp,
-                        modifier = Modifier.align(Alignment.BottomStart)
-                    ) {
-                        Icon(Icons.Default.Repeat, null, tint = Color.Gray)
-                    }
-
-                    NeumorphicButton(
-                        onClick = { /* Music */ },
-                        size = 56.dp,
-                        modifier = Modifier.align(Alignment.BottomEnd)
-                    ) {
-                        Icon(Icons.Default.MusicNote, null, tint = Color.Gray)
-                    }
-
-                    // Central Control Circle
                     Box(
                         modifier = Modifier
                             .size(200.dp)
                             .align(Alignment.Center)
-                            .neumorphicShadow(CircleShape, elevation = 6.dp)
-                            .background(NeumorphicBackground, CircleShape),
+                            .clip(CircleShape)
+                            .background(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = 0.15f),
+                                        Color.White.copy(alpha = 0.05f)
+                                    )
+                                )
+                            )
+                            .neumorphicShadow(CircleShape, elevation = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        // Control elements in circle
-                        // Top: Favorite/Heart
-                        Icon(
-                            Icons.Default.FavoriteBorder, 
-                            null, 
-                            tint = Color.Gray,
-                            modifier = Modifier.align(Alignment.TopCenter).padding(top = 16.dp).size(24.dp).clickable { /* Liked */ }
-                        )
-                        
-                        // Bottom: Volume/Speaker
-                        Icon(
-                            Icons.Default.VolumeUp, 
-                            null, 
-                            tint = Color.Gray,
-                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp).size(24.dp)
-                        )
-
-                        // Middle Row: Prev - Play/Pause - Next
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                        IconButton(
+                            onClick = { },
+                            modifier = Modifier.align(Alignment.TopCenter).padding(top = 16.dp)
                         ) {
-                            Icon(Icons.Default.SkipPrevious, null, tint = Color.Gray, modifier = Modifier.size(32.dp).clickable { viewModel.previous() })
-                            
-                            // Center Play/Pause in a smaller circle
-                            Box(
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .neumorphicShadow(CircleShape, elevation = 2.dp)
-                                    .background(NeumorphicBackground, CircleShape)
-                                    .clickable { viewModel.togglePlayPause() },
-                                contentAlignment = Alignment.Center
-                            ) {
+                            Icon(Icons.Default.FavoriteBorder, null, tint = Color.White.copy(alpha = 0.7f))
+                        }
+
+                        IconButton(
+                            onClick = { },
+                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp)
+                        ) {
+                            Icon(Icons.Default.Shuffle, null, tint = Color.White.copy(alpha = 0.7f))
+                        }
+
+                        IconButton(
+                            onClick = { viewModel.previous() },
+                            modifier = Modifier.align(Alignment.CenterStart).padding(start = 16.dp)
+                        ) {
+                            Icon(Icons.Default.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(32.dp))
+                        }
+
+                        IconButton(
+                            onClick = { viewModel.next() },
+                            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 16.dp)
+                        ) {
+                            Icon(Icons.Default.SkipNext, null, tint = Color.White, modifier = Modifier.size(32.dp))
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .size(72.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    brush = Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.White,
+                                            Color.White.copy(alpha = 0.9f)
+                                        )
+                                    )
+                                )
+                                .clickable(enabled = !isLoading) { viewModel.togglePlayPause() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(32.dp),
+                                    color = Color(0xFF1A1A1A),
+                                    strokeWidth = 3.dp
+                                )
+                            } else {
                                 Icon(
                                     if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                     null,
-                                    tint = Color.White,
+                                    tint = Color(0xFF1A1A1A),
                                     modifier = Modifier.size(40.dp)
                                 )
                             }
-
-                            Icon(Icons.Default.SkipNext, null, tint = Color.Gray, modifier = Modifier.size(32.dp).clickable { viewModel.next() })
                         }
                     }
                 }
+                
+                Spacer(modifier = Modifier.height(32.dp))
             }
         }
-    }
-}
-
-@Composable
-fun CircularPlayer(
-    imageUrl: String,
-    isPlaying: Boolean,
-    modifier: Modifier = Modifier
-) {
-    val rotation by animateFloatAsState(
-        targetValue = if (isPlaying) 360f else 0f,
-        animationSpec = infiniteRepeatable(tween(10000, easing = LinearEasing)), label = "rotation_animation"
-    )
-
-    Box(
-        modifier = modifier
-            .clip(CircleShape)
-            .graphicsLayer { rotationZ = if (isPlaying) rotation else 0f }
-            .background(Color.Black)
-    ) {
-        AsyncImage(
-            model = imageUrl,
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
     }
 }
 

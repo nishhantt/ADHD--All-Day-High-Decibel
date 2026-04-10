@@ -1,6 +1,3 @@
+# Backend no longer needed - keeping minimal for compatibility
 fastapi
 uvicorn
-yt-dlp
-requests
-python-multipart
-gunicorn

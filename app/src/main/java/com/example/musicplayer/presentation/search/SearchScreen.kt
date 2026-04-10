@@ -45,12 +45,12 @@ fun SearchScreen(
 ) {
     var query by remember { mutableStateOf(initialQuery ?: "") }
     
-    // Trigger initial search if query is provided (e.g. "local_files")
     LaunchedEffect(initialQuery) {
         if (!initialQuery.isNullOrBlank()) {
             viewModel.search(initialQuery)
         }
     }
+    
     val results by viewModel.searchResults.collectAsState()
     val recentSearches by viewModel.recentSearches.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -62,7 +62,6 @@ fun SearchScreen(
             .background(NeumorphicBackground)
             .statusBarsPadding()
     ) {
-        // 3D Search Bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -84,9 +83,9 @@ fun SearchScreen(
                 ) {
                     androidx.compose.foundation.text.BasicTextField(
                         value = query,
-                        onValueChange = {
-                            query = it
-                            viewModel.onQueryChanged(it)
+                        onValueChange = { newQuery ->
+                            query = newQuery
+                            viewModel.search(newQuery)
                         },
                         modifier = Modifier.weight(1f),
                         textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 16.sp),
@@ -111,7 +110,7 @@ fun SearchScreen(
                             tint = Color.Gray, 
                             modifier = Modifier.clickable { 
                                 query = ""
-                                viewModel.onQueryChanged("")
+                                viewModel.search("")
                             }
                         )
                     }
@@ -142,10 +141,9 @@ fun SearchScreen(
             }
 
             results.let { res ->
-                // Top Result
                 res.topResult?.let { song ->
+                    item { SectionHeader("Top Result") }
                     item {
-                        SectionHeader("Top Result")
                         TopResultItem(
                             song = song, 
                             onClick = { onSongSelected(song, listOf(song)) },
@@ -155,7 +153,6 @@ fun SearchScreen(
                     }
                 }
 
-                // Songs
                 if (res.songs.isNotEmpty()) {
                     item { SectionHeader("Songs") }
                     items(res.songs) { song ->
@@ -168,7 +165,6 @@ fun SearchScreen(
                     }
                 }
 
-                // Artists
                 if (res.artists.isNotEmpty()) {
                     item { SectionHeader("Artists") }
                     items(res.artists) { artist ->
@@ -176,7 +172,6 @@ fun SearchScreen(
                     }
                 }
 
-                // Albums
                 if (res.albums.isNotEmpty()) {
                     item { SectionHeader("Albums") }
                     items(res.albums) { album ->

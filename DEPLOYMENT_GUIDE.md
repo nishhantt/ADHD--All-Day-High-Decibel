@@ -1,26 +1,41 @@
-# Foolproof Guide: Getting Your Music Engine Online ($0)
+# No-Card Guide: Getting Your Music Engine Online ($0)
 
-You saw that error because you tried to install a VS Code extension using the "Visual Studio" installer. Don't worry, you don't even need Docker on your PC to make this work!
-
-## 🛑 Stop: You don't need to install Docker locally
-The cloud providers (Koyeb/Render) will look at the `Dockerfile` I gave you and build the container **on their servers**. You don't need to do anything on your Windows machine.
+Since you don't have a credit card, we will use **Render.com** or **Hugging Face**. Both of these let you host for free without any billing info!
 
 ---
 
-## 🚀 Step-by-Step Deployment (Koyeb - Always On)
+## 🚀 Option 1: Render.com (Easiest - No Card Needed)
+Render is perfect for this. I have already added the "Pre-Warm" logic to your Android app so it works smoothly even if the server sleeps!
 
-### Step 1: Push your code to GitHub
-For the free services to "see" your code, it must be in a GitHub repository.
-1. Create a **Private** repository on GitHub named `music-backend`.
-2. Push your local files (`extractor_server.py`, `Dockerfile`, `requirements.txt`) to that repo.
-   *(Since you asked me not to push, you can do this manually or via the GitHub Desktop app).*
+1. Go to [Render.com](https://render.com) and sign up with your GitHub account.
+2. Click **New +** $\rightarrow$ **Web Service**.
+3. Select your `music-extractor-backend` repository.
+4. For the **Runtime**, choose **Docker**.
+5. Select the **Free Instance Type**.
+6. Click **Create Web Service**.
+7. Once it's live, copy the URL (e.g., `https://my-app.onrender.com`).
 
-### Step 2: Connect to Koyeb
-1. Go to [Koyeb.com](https://www.koyeb.com) and create a free account.
-2. Click **Create Service**.
-3. Choose **GitHub** as the source.
-4. Select your `music-backend` repository.
-5. **Critial Step**: Under "Builder", make sure **Docker** is selected.
+---
+
+## 🚀 Option 2: Hugging Face Spaces (Always On - No Card Needed)
+Hugging Face is a secret "gem" for free hosting. It's stable and has a generous free tier.
+
+1. Create a free account at [HuggingFace.co](https://huggingface.co).
+2. Click **New Space**.
+3. Name it (e.g., `skibidi-music`).
+4. Select **Docker** as the Space SDK.
+5. Choose **Blank** or **HTTP Header** template.
+6. Public/Private doesn't matter much here. Click **Create Space**.
+7. Upload your `extractor_server.py`, `Dockerfile`, and `requirements.txt` to the Files tab.
+8. It will build and run. Your URL will be in the "Embed this Space" or "Direct URL" settings.
+
+---
+
+## 🛠️ Step 4: Link your Android App
+Open `NetworkModule.kt` in Android Studio and update:
+```kotlin
+const val BACKEND_URL = "https://your-custom-url.onrender.com"
+```
 
 ### Step 3: Configure & Deploy
 1. Name your service (e.g., `skibidi-engine`).

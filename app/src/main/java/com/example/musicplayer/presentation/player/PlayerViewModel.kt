@@ -1,168 +1,361 @@
 package com.example.musicplayer.presentation.player
 
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.os.IBinder
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import com.example.musicplayer.data.MusicRepository
 import com.example.musicplayer.domain.models.Song
 import com.example.musicplayer.player.ExoPlayerManager
+import com.example.musicplayer.player.MusicPlayerService
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.net.URL
 import javax.inject.Inject
 
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
-    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     private val exoPlayerManager: ExoPlayerManager,
-    private val musicRepository: com.example.musicplayer.data.MusicRepository,
-    private val behaviorRepository: com.example.musicplayer.data.BehaviorRepository,
-    private val playbackStateDao: com.example.musicplayer.data.local.dao.PlaybackStateDao,
-    private val recommendationEngine: com.example.musicplayer.domain.recommendation.RecommendationEngine
+    private val musicRepository: MusicRepository,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow<PlayerUiState>(PlayerUiState.Idle)
-    val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
+    private val player = exoPlayerManager.player
+    
+    private var musicService: MusicPlayerService? = null
+    private var serviceBound = false
+    private var artworkLoadJob: Job? = null
+    private var prefetchJob: Job? = null
+
+    private val _currentSong = MutableStateFlow<Song?>(null)
+    val currentSong: StateFlow<Song?> = _currentSong.asStateFlow()
 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
-    private val _currentPosition = MutableStateFlow(0L)
-    val currentPosition: StateFlow<Long> = _currentPosition.asStateFlow()
+    private val _playbackPosition = MutableStateFlow(0L)
+    val playbackPosition: StateFlow<Long> = _playbackPosition.asStateFlow()
 
     private val _duration = MutableStateFlow(0L)
     val duration: StateFlow<Long> = _duration.asStateFlow()
 
+    private val _repeatMode = MutableStateFlow(ExoPlayerManager.REPEAT_MODE_OFF)
+    val repeatMode: StateFlow<Int> = _repeatMode.asStateFlow()
+
     private val _playlist = MutableStateFlow<List<Song>>(emptyList())
     val playlist: StateFlow<List<Song>> = _playlist.asStateFlow()
+    
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    private var currentIndex = -1
-
-    private val player: Player = exoPlayerManager.asPlayer()
+    private var currentIndex = 0
+    private var currentPlayJob: Job? = null
+    private var lastPlayedSongId: String? = null
+    private var cachedArtwork: Bitmap? = null
+    private var positionUpdateJob: Job? = null
 
     init {
-        // Load last played song
-        viewModelScope.launch {
-            playbackStateDao.observeState().collect { state ->
-                if (state != null && _uiState.value is PlayerUiState.Idle) {
-                    val song = Song(
-                        id = state.currentTrackId ?: "",
-                        title = state.title ?: "",
-                        artist = state.artist ?: "",
-                        image = state.image ?: "",
-                        audioUrl = state.audioUrl ?: ""
-                    )
-                    _uiState.value = PlayerUiState.Playing(song)
-                    _currentPosition.value = state.positionMs
-                }
-            }
-        }
+        bindService()
+        setupPlayerListener()
+        startPositionUpdates()
+    }
 
+    private fun setupPlayerListener() {
         player.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlayingNow: Boolean) {
-                _isPlaying.value = isPlayingNow
-                if (isPlayingNow) {
-                    _duration.value = player.duration.coerceAtLeast(0)
-                }
-            }
-
-            override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_READY) {
-                    _duration.value = player.duration.coerceAtLeast(0)
-                } else if (state == Player.STATE_ENDED) {
-                    smartNext()
-                }
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                _isPlaying.value = isPlaying
+                updateNotification()
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                // Update current song state when transitioning (e.g. via Next/Prev)
-                val currentSong = _playlist.value.getOrNull(player.currentMediaItemIndex)
-                if (currentSong != null) {
-                    currentIndex = player.currentMediaItemIndex
-                    _uiState.value = PlayerUiState.Playing(currentSong)
+                val index = player.currentMediaItemIndex
+                Log.d("PlayerViewModel", "Media item transition: index=$index, reason=$reason")
+                
+                if (index >= 0 && index < _playlist.value.size) {
+                    val newSong = _playlist.value[index]
                     
-                    // Track play behavior
-                    viewModelScope.launch {
-                        behaviorRepository.trackPlay(currentSong.id, currentSong.artist, currentSong.title)
+                    if (_currentSong.value?.id != newSong.id) {
+                        if (newSong.id.isNotBlank()) {
+                            viewModelScope.launch {
+                                musicRepository.updateTransition(lastPlayedSongId, newSong.id)
+                            }
+                            lastPlayedSongId = newSong.id
+                        }
+                        _currentSong.value = newSong
+                        loadArtworkForNotification(newSong)
+                    }
+                    
+                    currentIndex = index
+                    prefetchNextSongs()
+                }
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                Log.d("PlayerViewModel", "Playback state: $playbackState")
+                when (playbackState) {
+                    Player.STATE_READY -> {
+                        _duration.value = player.duration.coerceAtLeast(0)
+                        _isLoading.value = false
+                    }
+                    Player.STATE_ENDED -> {
+                        Log.d("PlayerViewModel", "Playback ended")
+                        _isLoading.value = false
+                    }
+                    Player.STATE_BUFFERING -> {
+                        _isLoading.value = true
+                    }
+                    Player.STATE_IDLE -> {
+                        _isLoading.value = false
                     }
                 }
             }
+            
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                Log.e("PlayerViewModel", "Player error: ${error.message}")
+                _isLoading.value = false
+            }
         })
+    }
 
-        viewModelScope.launch {
+    private fun startPositionUpdates() {
+        positionUpdateJob?.cancel()
+        positionUpdateJob = viewModelScope.launch {
             while (isActive) {
                 if (player.isPlaying) {
-                    _currentPosition.value = player.currentPosition
-                    // Occasionally duration is -1 until some data is buffered
-                    if (_duration.value <= 0) {
-                        _duration.value = player.duration.coerceAtLeast(0)
-                    }
+                    _playbackPosition.value = player.currentPosition
+                    _duration.value = player.duration.coerceAtLeast(0)
                 }
-                delay(1000)
+                delay(500)
             }
         }
     }
 
-    private var playJob: kotlinx.coroutines.Job? = null
+    private fun bindService() {
+        val intent = Intent(context, MusicPlayerService::class.java)
+        context.startService(intent)
+        context.bindService(intent, object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+                val binder = service as MusicPlayerService.LocalBinder
+                musicService = binder.getService()
+                serviceBound = true
+                Log.d("PlayerViewModel", "Service connected")
+            }
 
-    fun playSong(song: Song, songs: List<Song> = emptyList()) {
-        playJob?.cancel()
-        playJob = viewModelScope.launch {
-            _uiState.value = PlayerUiState.Loading
-            
+            override fun onServiceDisconnected(name: ComponentName?) {
+                musicService = null
+                serviceBound = false
+            }
+        }, Context.BIND_AUTO_CREATE)
+    }
+
+    private fun loadArtworkForNotification(song: Song) {
+        artworkLoadJob?.cancel()
+        if (song.image.isBlank()) {
+            cachedArtwork = null
+            return
+        }
+        artworkLoadJob = viewModelScope.launch {
+            cachedArtwork = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val url = URL(song.image)
+                    val connection = url.openConnection()
+                    connection.doInput = true
+                    connection.connectTimeout = 3000
+                    connection.readTimeout = 3000
+                    connection.inputStream.use { input ->
+                        val options = BitmapFactory.Options().apply { inSampleSize = 2 }
+                        BitmapFactory.decodeStream(input, null, options)
+                    }
+                } catch (e: Exception) {
+                    Log.e("PlayerViewModel", "Artwork load failed: ${e.message}")
+                    null
+                }
+            }
+            updateNotification()
+        }
+    }
+
+    private fun updateNotification() {
+        if (!serviceBound) return
+        val song = _currentSong.value ?: return
+        musicService?.updateNotification(
+            title = song.title,
+            artist = song.artist,
+            isPlaying = player.isPlaying,
+            artwork = cachedArtwork
+        )
+    }
+
+    fun playSong(song: Song, existingPlaylist: List<Song> = emptyList()) {
+        currentPlayJob?.cancel()
+        prefetchJob?.cancel()
+        
+        _isLoading.value = true
+        
+        val playlistToUse: List<Song>
+        val startIndex: Int
+        
+        if (existingPlaylist.isNotEmpty()) {
+            val songIndex = existingPlaylist.indexOfFirst { it.id == song.id }
+            if (songIndex >= 0) {
+                playlistToUse = existingPlaylist.toList()
+                startIndex = songIndex
+            } else {
+                playlistToUse = listOf(song) + existingPlaylist
+                startIndex = 0
+            }
+        } else {
+            playlistToUse = listOf(song)
+            startIndex = 0
+        }
+        
+        _playlist.value = playlistToUse
+        currentIndex = startIndex
+        
+        currentPlayJob = viewModelScope.launch {
             try {
-                // Ensure we have a stream URL (this might take a second, so we allow cancellation)
-                val songWithUrl = if (song.audioUrl.isBlank()) {
-                    Log.d("Player", "Fetching stream URL for: ${song.title}")
-                    musicRepository.getSongDetails(song.id) ?: song
-                } else {
+                Log.d("PlayerViewModel", "Playing: ${song.title}")
+                
+                val songWithUrl = if (song.audioUrl.isNotBlank()) {
                     song
+                } else {
+                    Log.d("PlayerViewModel", "Fetching URL for: ${song.title}")
+                    val streamUrl = musicRepository.getStreamUrlForSong(song)
+                    if (streamUrl.isNullOrBlank()) {
+                        Log.e("PlayerViewModel", "Failed to get URL")
+                        _isLoading.value = false
+                        return@launch
+                    }
+                    Log.d("PlayerViewModel", "Got URL")
+                    song.copy(audioUrl = streamUrl)
                 }
 
-                if (!this.isActive) return@launch
+                _currentSong.value = songWithUrl
+                
+                val updatedPlaylist = playlistToUse.mapIndexed { i, s -> 
+                    if (i == startIndex) songWithUrl else s 
+                }
+                _playlist.value = updatedPlaylist
 
-                if (songWithUrl.audioUrl.isBlank()) {
-                    _uiState.value = PlayerUiState.Error("Invalid audio URL")
+                val mediaItems = updatedPlaylist.mapNotNull { s -> 
+                    if (s.audioUrl.isNotBlank()) createMediaItem(s) else null 
+                }
+                
+                if (mediaItems.isEmpty()) {
+                    Log.e("PlayerViewModel", "No valid media items")
+                    _isLoading.value = false
                     return@launch
                 }
-
-                // If a list was provided (e.g. from search results), use it as the playlist
-                val newList = if (songs.isNotEmpty()) songs.toMutableList() else mutableListOf(songWithUrl)
                 
-                // Ensure the explicit song with the URL is updated in the list
-                val idx = newList.indexOfFirst { it.id == songWithUrl.id }
-                if (idx != -1) {
-                    newList[idx] = songWithUrl
-                } else {
-                    newList.add(0, songWithUrl)
-                }
-
-                _playlist.value = newList
-                currentIndex = newList.indexOfFirst { it.id == songWithUrl.id }.coerceAtLeast(0)
-
-                Log.d("PlayerViewModel", "Final Playlist Size: ${newList.size}, Index: $currentIndex")
-                
-                val mediaItems = newList.map { createMediaItem(it) }
-                
-                // Clear state before new session
                 player.stop()
                 player.clearMediaItems()
-                
-                player.setMediaItems(mediaItems, currentIndex, 0L)
+                player.setMediaItems(mediaItems, startIndex, 0L)
+                player.repeatMode = _repeatMode.value
                 player.prepare()
                 player.play()
                 
-                _uiState.value = PlayerUiState.Playing(songWithUrl)
-                saveState(songWithUrl)
+                Log.d("PlayerViewModel", "Started playing at index $startIndex")
+                
+                loadArtworkForNotification(songWithUrl)
+                updateNotification()
+                prefetchNextSongs()
+                
             } catch (e: Exception) {
-                Log.e("PlayerViewModel", "Playback error", e)
-                _uiState.value = PlayerUiState.Error("Playback failed")
+                Log.e("PlayerViewModel", "Error: ${e.message}")
+                _isLoading.value = false
             }
+        }
+    }
+
+    fun playNext(song: Song) {
+        viewModelScope.launch {
+            val songWithUrl = if (song.audioUrl.isBlank()) {
+                val streamUrl = musicRepository.getStreamUrlForSong(song)
+                if (streamUrl.isNullOrBlank()) {
+                    Log.e("PlayerViewModel", "Failed to get URL for playNext")
+                    return@launch
+                }
+                song.copy(audioUrl = streamUrl)
+            } else song
+
+            val currentList = _playlist.value.toMutableList()
+            val nextIndex = (currentIndex + 1).coerceAtMost(currentList.size)
+            
+            currentList.add(nextIndex, songWithUrl)
+            _playlist.value = currentList
+            
+            player.addMediaItem(nextIndex, createMediaItem(songWithUrl))
+            Log.d("PlayerViewModel", "Added to play next: ${songWithUrl.title}")
+        }
+    }
+
+    private fun prefetchNextSongs() {
+        prefetchJob?.cancel()
+        prefetchJob = viewModelScope.launch {
+            val currentList = _playlist.value
+            if (currentList.isEmpty()) return@launch
+            
+            val startIndex = currentIndex + 1
+            if (startIndex >= currentList.size) return@launch
+            
+            val songsToFetch = currentList.drop(startIndex).take(5).filter { it.audioUrl.isBlank() }
+            if (songsToFetch.isEmpty()) return@launch
+            
+            musicRepository.prefetchUrls(songsToFetch)
+            
+            val updatedList = _playlist.value.toMutableList()
+            var changed = false
+            
+            updatedList.forEachIndexed { i, song ->
+                if (i >= startIndex && song.audioUrl.isBlank()) {
+                    val streamUrl = musicRepository.getCachedUrl(song.id, song.artist, song.title)
+                    if (!streamUrl.isNullOrBlank()) {
+                        updatedList[i] = song.copy(audioUrl = streamUrl)
+                        changed = true
+                    }
+                }
+            }
+            
+            if (changed) {
+                _playlist.value = updatedList
+                Log.d("PlayerViewModel", "Prefetch complete")
+            }
+        }
+    }
+
+    fun addToQueue(song: Song) {
+        viewModelScope.launch {
+            val songWithUrl = if (song.audioUrl.isBlank()) {
+                val streamUrl = musicRepository.getStreamUrlForSong(song)
+                if (streamUrl.isNullOrBlank()) {
+                    Log.e("PlayerViewModel", "Failed to get URL for queue")
+                    return@launch
+                }
+                song.copy(audioUrl = streamUrl)
+            } else song
+
+            val currentList = _playlist.value.toMutableList()
+            currentList.add(songWithUrl)
+            _playlist.value = currentList
+            
+            player.addMediaItem(createMediaItem(songWithUrl))
+            Log.d("PlayerViewModel", "Added to queue: ${songWithUrl.title}")
         }
     }
 
@@ -180,110 +373,66 @@ class PlayerViewModel @Inject constructor(
             .build()
     }
 
-    private fun saveState(song: Song) {
-        viewModelScope.launch {
-            playbackStateDao.upsert(
-                com.example.musicplayer.data.local.entities.PlaybackStateEntity(
-                    id = 0,
-                    currentTrackId = song.id,
-                    title = song.title,
-                    artist = song.artist,
-                    image = song.image,
-                    audioUrl = song.audioUrl,
-                    positionMs = 0L,
-                    isPlaying = true
-                )
-            )
-        }
-    }
-
-    fun addToQueue(song: Song) {
-        val currentList = _playlist.value.toMutableList()
-        if (!currentList.any { it.id == song.id }) {
-            currentList.add(song)
-            _playlist.value = currentList
-            player.addMediaItem(createMediaItem(song))
-        }
-    }
-
-    fun playNext(song: Song) {
-        val currentList = _playlist.value.toMutableList()
-        val nextIndex = (currentIndex + 1).coerceAtMost(currentList.size)
-        currentList.add(nextIndex, song)
-        _playlist.value = currentList
-        player.addMediaItem(nextIndex, createMediaItem(song))
-    }
-
     fun togglePlayPause() {
-        if (player.isPlaying) exoPlayerManager.pause() else exoPlayerManager.play()
+        if (player.isPlaying) {
+            player.pause()
+        } else {
+            player.play()
+        }
     }
 
     fun next() {
-        val currentSong = (_uiState.value as? PlayerUiState.Playing)?.song
-        if (currentSong != null) {
-            viewModelScope.launch { behaviorRepository.trackSkip(currentSong.id) }
-        }
-        fadeOutAndNext()
-    }
-
-    private fun fadeOutAndNext() {
-        viewModelScope.launch {
-            // Smooth fade out
-            for (i in 10 downTo 0) {
-                player.volume = i / 10f
-                delay(50)
-            }
-            smartNext()
-            // Reset volume for next track
-            player.volume = 1.0f
-        }
-    }
-
-    private fun smartNext() {
+        Log.d("PlayerViewModel", "next() called, hasNext=${player.hasNextMediaItem()}, count=${player.mediaItemCount}")
         if (player.hasNextMediaItem()) {
             player.seekToNextMediaItem()
-        } else {
-            // AI logic: Recommend a fresh song if we reach the end of the playlist
-            val currentSong = (_uiState.value as? PlayerUiState.Playing)?.song
-            if (currentSong != null && _playlist.value.isNotEmpty()) {
-                viewModelScope.launch {
-                    val recommended = recommendationEngine.recommendNextSong(currentSong, _playlist.value)
-                    // In a real app, we might fetch NEW songs from API here.
-                    // For now, we jump to the recommended one in the current list.
-                    val index = _playlist.value.indexOf(recommended)
-                    if (index != -1) {
-                        player.seekTo(index, 0L)
-                    } else {
-                        player.seekTo(0, 0)
-                    }
-                    player.play()
-                }
-            } else if (_playlist.value.isNotEmpty()) {
-                player.seekTo(0, 0)
-                player.play()
-            }
+        } else if (_repeatMode.value == ExoPlayerManager.REPEAT_MODE_ALL && player.mediaItemCount > 0) {
+            player.seekTo(0, 0)
         }
     }
 
     fun previous() {
-        if (player.hasPreviousMediaItem()) {
+        Log.d("PlayerViewModel", "previous() called, position=${player.currentPosition}, hasPrev=${player.hasPreviousMediaItem()}")
+        if (player.currentPosition > 3000) {
+            player.seekTo(0)
+        } else if (player.hasPreviousMediaItem()) {
             player.seekToPreviousMediaItem()
+        } else if (_repeatMode.value == ExoPlayerManager.REPEAT_MODE_ALL && player.mediaItemCount > 0) {
+            player.seekTo(player.mediaItemCount - 1, 0)
         } else {
             player.seekTo(0)
         }
     }
 
-    fun seekTo(ms: Long) {
-        player.seekTo(ms)
-        _currentPosition.value = ms
+    fun seekTo(positionMs: Long) {
+        player.seekTo(positionMs)
+        _playbackPosition.value = positionMs
     }
 
-    fun getDuration(): Long = _duration.value
-}
+    fun seekForward(ms: Long = 10000L) {
+        val newPosition = (player.currentPosition + ms).coerceAtMost(player.duration)
+        player.seekTo(newPosition)
+    }
 
-sealed interface PlayerUiState {
-    object Idle : PlayerUiState
-    object Loading : PlayerUiState
-    data class Playing(val song: Song) : PlayerUiState
-    data class Error(val message: String) : PlayerUiState
+    fun seekBackward(ms: Long = 10000L) {
+        val newPosition = (player.currentPosition - ms).coerceAtLeast(0)
+        player.seekTo(newPosition)
+    }
+
+    fun toggleRepeatMode() {
+        val nextMode = when (_repeatMode.value) {
+            ExoPlayerManager.REPEAT_MODE_OFF -> ExoPlayerManager.REPEAT_MODE_ALL
+            ExoPlayerManager.REPEAT_MODE_ALL -> ExoPlayerManager.REPEAT_MODE_ONE
+            else -> ExoPlayerManager.REPEAT_MODE_OFF
+        }
+        _repeatMode.value = nextMode
+        player.repeatMode = nextMode
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        positionUpdateJob?.cancel()
+        artworkLoadJob?.cancel()
+        prefetchJob?.cancel()
+        currentPlayJob?.cancel()
+    }
 }
