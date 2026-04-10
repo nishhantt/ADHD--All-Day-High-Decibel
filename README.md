@@ -1,65 +1,99 @@
 # ADHD - All Day High Decibel 🎵
 
-So I built this app because I got tired of paying for Spotify every month. Why should I pay $10/month when I can just stream music from YouTube for free?
-
-This is my personal music player - I use it daily on my Samsung A21s. It's not perfect, but it works exactly how I want it to.
+Experimental Android music streaming application with Python backend. Built as a proof-of-concept to explore YouTube as an alternative audio CDN, bypassing traditional music streaming services.
 
 ---
 
-## What it does
+## Core Functionality
 
-- Search any song (iTunes gives me the metadata, YouTube gives me the audio)
-- Play music straight from YouTube streams
-- Queue up songs and have them play automatically
-- Skip forward/backward 10 seconds with buttons
-- Next/Previous buttons that actually work
-- Lock screen controls - play/pause/skip from notification
-- Repeat mode - off, repeat all, or repeat one
-
----
-
-## How I made it fast
-
-I spent a lot of time optimizing because I hate waiting for songs to buffer:
-
-- **Reuse connections** - HTTP session stays open so I don't reconnect every time
-- **Cache URLs** - Once I get a YouTube stream URL, I keep it for 48 hours
-- **Prefetch** - When a song starts playing, I fetch the next 5 songs in the background
-- **Tuned ExoPlayer** - Adjusted the buffer sizes so songs start faster on mobile data
+- **Search**: iTunes Search API for metadata (artist, title, artwork), YouTube for stream URL resolution
+- **Playback**: Media3 ExoPlayer with adaptive streaming
+- **Queue Management**: In-memory playlist with auto-advance on track completion
+- **Media Controls**: Previous/Next media items, seek forward/backward (10s intervals)
+- **Background Playback**: Foreground service with MediaStyle notification
+- **Repeat Modes**: OFF / ALL / ONE
 
 ---
 
-## The tech I used
+## Performance Optimizations
 
-| What | Why |
-|------|-----|
-| Kotlin + Jetpack Compose | Modern Android UI, fast development |
-| Media3 ExoPlayer | Best media player for Android, handles streaming great |
-| Python FastAPI | Lightweight backend, easy to run on phone |
-| iTunes Search API | Free, no API key needed, good metadata |
-| YouTube (youtubei) | The actual audio source - works surprisingly well |
-| Termux | Running the Python server directly on my Android phone |
+Implemented various optimizations to minimize latency:
 
----
-
-## How I run it
-
-I don't use any cloud hosting - my backend runs on my phone itself using Termux:
-
-1. Install Termux from Play Store
-2. `pkg install python git`
-3. Clone this repo
-4. `pip install -r server/requirements.txt`
-5. `python server/app.py`
-
-Done. Server runs on port 7860. My Android app connects to it and streams music.
+| Optimization | Implementation |
+|--------------|----------------|
+| HTTP Keep-Alive | `requests.Session()` with persistent connections |
+| Stream URL Cache | LRU cache with 48-hour TTL in `url_cache.json` |
+| Prefetching | Async fetch next 5 queue items on media transition |
+| Buffer Tuning | ExoPlayer LoadControl: 5s min, 15s max buffer |
+| Gzip Compression | Starlette GZipMiddleware for responses >500B |
 
 ---
 
-## Is it legal?
+## Architecture
 
-For me, this is personal use only. I don't distribute anything. YouTube might not like it, but I'm not commercializing this. Use your own judgment.
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Android Client                        │
+│  ┌─────────────┐  ┌──────────────┐  ┌───────────────┐  │
+│  │ Compose UI  │→ │ ViewModel    │→ │ ExoPlayer     │  │
+│  │ (Kotlin)    │  │ (StateFlow)  │  │ (Media3)      │  │
+│  └─────────────┘  └──────────────┘  └───────────────┘  │
+└─────────────────────────────────────────────────────────┘
+                           │
+                    localhost:7860
+                           │
+┌─────────────────────────────────────────────────────────┐
+│                   Python Backend (FastAPI)              │
+│  ┌─────────────┐  ┌──────────────┐  ┌───────────────┐  │
+│  │ iTunes API  │  │ youtubei API │  │ LRU Cache     │  │
+│  │ (metadata)  │  │ (streaming)  │  │ (URL + search)│  │
+│  └─────────────┘  └──────────────┘  └───────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
 
 ---
 
-That's pretty much it. Feel free to use it however you want.
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Client | Kotlin 1.8, Jetpack Compose 1.5, Hilt DI |
+| Media | Media3 ExoPlayer 1.2, MediaSession |
+| Backend | Python 3.11, FastAPI 0.118, Uvicorn |
+| Search | iTunes Search API (no auth required) |
+| Streaming | YouTube Internal API (youtubei) |
+| Host | Termux on Android (Samsung A21s) |
+
+---
+
+## Deployment
+
+**Runtime Environment**: Android device via Termux
+
+```bash
+# Install dependencies
+pip install -r server/requirements.txt
+
+# Start FastAPI server
+python server/app.py
+# → Uvicorn running on http://0.0.0.0:7860
+```
+
+Backend exposes REST endpoints:
+- `/api/mobile/search?q=<query>` - iTunes search
+- `/api/mobile/play?id=<>&artist=<>&title=<>` - Get stream URL
+- `/api/mobile/prefetch` - Background URL resolution
+- `/api/mobile/health` - Server health check
+
+---
+
+## Notes
+
+- Personal use only - no commercial distribution
+- YouTube ToS may prohibit streaming outside their client
+- Backend can be deployed to any Python-hosting service (Render, Railway, etc.)
+- Uses Android `adb reverse` for localhost development
+
+---
+
+Built with Kotlin + Python. No subscriptions required.
