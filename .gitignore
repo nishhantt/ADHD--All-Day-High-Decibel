@@ -14,4 +14,18 @@ local.properties
 Thumbs.db
 Desktop.ini
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.pytest_cache/
+
+# Server
+server/song_cache/
+server/url_cache.json
+server/data/
+
 # Temporary helper folder used for pushing backend
